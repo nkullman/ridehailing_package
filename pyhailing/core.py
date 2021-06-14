@@ -60,7 +60,7 @@ class RidehailGeometry():
     def __init__(
         self,
         seed: int,
-        distances: str = "euclidean",
+        distances: str = "manhattan",
         stochastic: bool = False,
     ):
         """Initializes a RidehailGeometry object.
@@ -77,7 +77,7 @@ class RidehailGeometry():
         self.stochastic = stochastic
         self.distances = distances
 
-        self.rotated = self.distances == "manhattan_rotated"
+        self.rotated = self.distances == "manhattan"
         self._distance_func = self._get_distance_function(distances)
 
         # Load the zones file and populate related class parameters

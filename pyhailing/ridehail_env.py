@@ -53,7 +53,7 @@ class RidehailEnv(gym.Env):
         num_vehicles: int=20,
         num_requests: int=1000,
         stochastic: bool=False,
-        distances: str="euclidean",
+        distances: str="manhattan",
         seed: int=321,
         action_timelimit: float=np.inf,
         max_interdecision_time: Optional[float]=None,
