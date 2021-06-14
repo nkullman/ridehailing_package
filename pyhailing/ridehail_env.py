@@ -207,7 +207,10 @@ class RidehailEnv(gym.Env):
     def new_request(self):
         """Returns the new request. If there is no new request, then returns the null request."""
         if self._is_new_request:
+            # The new request is the one before the next request to be released
+            curr_request_idx = self._next_request_idx - 1
             return (
+                self._requests.loc[curr_request_idx, ["ox", "oy", "dx", "dy"]]
                 .to_numpy().reshape(2,2).astype(np.float64)
             )
         else:
