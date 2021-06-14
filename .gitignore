@@ -133,3 +133,6 @@ dmypy.json
 
 # The big trips files
 pyhailing/data/trips.*
+
+# Tests, for now
+tests
