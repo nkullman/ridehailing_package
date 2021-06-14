@@ -881,14 +881,16 @@ class RidehailEnv(gym.Env):
         #
 
         ## Phase II.I: Computing the percentage of each job that has been completed for each vehicle,
-        ##   and using that to compute the travel cost for the action.
+        ##   and using that to compute the travel cost for the action and the number of jobs that
+        ##   should be removed from each vehicle's job list.
 
         job_otimes = self._vehicles[["j1ot", "j2ot", "j3ot"]].to_numpy()
         job_dtimes = self._vehicles[["j1dt", "j2dt", "j3dt"]].to_numpy()
         job_durations = job_dtimes - job_otimes
-        job_pct_remaining_now = np.clip(job_dtimes - self.time, 0, job_durations) / job_durations
-        job_pct_remaining_next = np.clip(job_dtimes - next_epoch_time, 0, job_durations) / job_durations
-        job_pct_completed = np.where(job_durations == 0, 0.0, job_pct_remaining_now - job_pct_remaining_next)
+        job_durations_inf_zeros = np.where(job_durations == 0, np.inf, job_durations)  # so we can perform valid division
+        job_pct_remaining_now = np.clip(job_dtimes - self.time, 0, job_durations) / job_durations_inf_zeros
+        job_pct_remaining_next = np.clip(job_dtimes - next_epoch_time, 0, job_durations) / job_durations_inf_zeros
+        job_pct_completed = job_pct_remaining_now - job_pct_remaining_next
         assert np.all(np.isfinite(job_pct_completed)), "Values should all be finite at this point."
         job_dists = self._get_jobs_dists()
         dists_traveled = job_pct_completed * job_dists
