@@ -162,7 +162,7 @@ class RidehailEnv(gym.Env):
 
     @property
     def NULL_REQUEST(self):
-        return np.array([[self._NULL_X, self._NULL_Y], [self._NULL_X, self._NULL_Y]], dtype=np.float32)
+        return np.array([[self._NULL_X, self._NULL_Y], [self._NULL_X, self._NULL_Y]], dtype=np.float64)
     
 
     @property
@@ -208,8 +208,7 @@ class RidehailEnv(gym.Env):
         """Returns the new request. If there is no new request, then returns the null request."""
         if self._is_new_request:
             return (
-                self._requests.iloc[self._next_request_idx, :][["ox", "oy", "dx", "dy"]]
-                .to_numpy().reshape(2,2).astype(np.float32)
+                .to_numpy().reshape(2,2).astype(np.float64)
             )
         else:
             return self.NULL_REQUEST
@@ -277,7 +276,7 @@ class RidehailEnv(gym.Env):
                 low=0,
                 high=self._MAX_TIME,
                 shape=(1,),
-                dtype=np.float32
+                dtype=np.float64
             ),
 
             # Second element is the day of the week
@@ -298,7 +297,7 @@ class RidehailEnv(gym.Env):
             "request": spaces.Box(
                 low=np.tile([self.x_range[0], self.y_range[0]], 2).reshape(2,2),
                 high=np.tile([self.x_range[1], self.y_range[1]], 2).reshape(2,2),
-                dtype=np.float32
+                dtype=np.float64
             ),
 
             # Sixth, vehicle locations, a Box of shape (V, 2)
@@ -308,7 +307,7 @@ class RidehailEnv(gym.Env):
             "v_locs": spaces.Box(
                 low=np.tile([self.x_range[0], self.y_range[0]], self._V).reshape(self._V, 2),
                 high=np.tile([self.x_range[1], self.y_range[1]], self._V).reshape(self._V, 2),
-                dtype=np.float32
+                dtype=np.float64
             ),
 
             # Seventh element contains vehicles' job types
@@ -330,7 +329,7 @@ class RidehailEnv(gym.Env):
                     np.tile([self.x_range[1], self.y_range[1]], self._num_vehicles * 3 * 2)
                     .reshape(self._num_vehicles, 3, 2, 2)
                 ),
-                dtype=np.float32),
+                dtype=np.float64),
         })
     
 
@@ -1034,7 +1033,7 @@ class RidehailEnv(gym.Env):
 
             # Vehicle locations
             # [[v0x, v0y], [v1x, v1y], ... [vVx, vVy]]
-            "v_locs": (self._vehicles[["x", "y"]].to_numpy().astype(np.float32)),
+            "v_locs": (self._vehicles[["x", "y"]].to_numpy().astype(np.float64)),
 
             # Vehicles' job types
             # [[v0j1m, v0j2m, v0j3m], [v1j1m, v1j2m, v1j3m], ... [vVj1m, vVj2m, vVj3m]]
@@ -1050,7 +1049,7 @@ class RidehailEnv(gym.Env):
                     "j1ox", "j1oy", "j1dx", "j1dy",
                     "j2ox", "j2oy", "j2dx", "j3dy",
                     "j3ox", "j3oy", "j3dx", "j3dy"
-                ]].to_numpy().reshape(self._V, 3, 2, 2).astype(np.float32)
+                ]].to_numpy().reshape(self._V, 3, 2, 2).astype(np.float64)
             ),
         }
 
