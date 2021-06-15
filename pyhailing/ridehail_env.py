@@ -23,13 +23,11 @@ class RidehailEnv(gym.Env):
 
       In the Ridehail environment, there are random requests for rides from
       some origin location to some destination location. An agent in this
-      environment controls a (homogeneous) fleet of autonomous electric 
-      vehicles that service these requests. In addition to serving requests,
-      the vehicles can be moved around and charged in anticipation of future
+      environment controls a (homogeneous) fleet of vehicles that service
+      these requests. In addition to serving requests, the vehicles can be moved
+      around to wait at designated locations ("lots") in anticipation of future
       requests.
 
-      Note that after calling gym.make('ridehail-v0'), to fully initialize the
-      environment, you must also call env.set_instance() and env.seed().
     """
 
     # TODO set according to the trips file loaded: value of the hour that marks the beginning of the slowest 2-hr window.
@@ -58,6 +56,8 @@ class RidehailEnv(gym.Env):
         action_timelimit: float=np.inf,
         max_interdecision_time: Optional[float]=None,
     ):
+        """TODO"""
+
         logging.info("Ridehail environment being initialized...")
 
         self._num_vehicles = self._V = num_vehicles
@@ -82,7 +82,9 @@ class RidehailEnv(gym.Env):
         self.curr_step = -1
         # The time at which the last observation was released to the agent.
         self._obs_release_time = None
-
+        # Note that there are no pending requests (used in the initialization of
+        # our action and observation spaces).
+        self.num_pending_requests = 0
         # Initialize our observation and action spaces
         self._make_observation_space()
         self._make_action_space()
@@ -161,11 +163,6 @@ class RidehailEnv(gym.Env):
 
 
     @property
-    def NULL_REQUEST(self):
-        return np.array([[self._NULL_X, self._NULL_Y], [self._NULL_X, self._NULL_Y]], dtype=np.float64)
-    
-
-    @property
     def num_lots(self):
         return self._geom.num_lots
 
@@ -203,20 +200,6 @@ class RidehailEnv(gym.Env):
         return self._make_state()
     
     
-    @property
-    def new_request(self):
-        """Returns the new request. If there is no new request, then returns the null request."""
-        if self._is_new_request:
-            # The new request is the one before the next request to be released
-            curr_request_idx = self._next_request_idx - 1
-            return (
-                self._requests.loc[curr_request_idx, ["ox", "oy", "dx", "dy"]]
-                .to_numpy().reshape(2,2).astype(np.float64)
-            )
-        else:
-            return self.NULL_REQUEST
-
-    
     def _pending_requests_mask(self) -> pd.Series:
         """Provides the boolean mask for requests that are available for assignment."""
         return (
@@ -238,12 +221,7 @@ class RidehailEnv(gym.Env):
 
     
     def _make_action_space(self) -> None:
-        """Creates the environment's action space."""
-
-        # When creating the action space for the first time, we know that no
-        # episode has yet begun, so we need to specify that the number of pending
-        # requests is 0. Set that now.
-        self.num_pending_requests = 0
+        """Initializes the environment's action space."""
 
         self.action_space = spaces.Dict({
             # First, for each pending request, indicate whether we reject it.
@@ -263,14 +241,18 @@ class RidehailEnv(gym.Env):
 
         # Update the spaces that depend on the number of pending requests.
 
-        self.action_space.spaces["req_rejections"] = spaces.MultiBinary(self.num_pending_requests)
+        # Check to confirm that we need to update the action space's shape
+        if self.action_space.spaces["req_rejections"].shape != (self.num_pending_requests,):
 
-        self.action_space.spaces["req_assgts"] = spaces.MultiDiscrete(
-            np.full((self.num_pending_requests,), fill_value=self._num_vehicles + 1, dtype=np.int)
-        )
+            self.action_space.spaces["req_rejections"] = spaces.MultiBinary(self.num_pending_requests)
+
+            self.action_space.spaces["req_assgts"] = spaces.MultiDiscrete(
+                np.full((self.num_pending_requests,), fill_value=self._num_vehicles + 1, dtype=np.int)
+            )
         
 
     def _make_observation_space(self) -> gym.Space:
+        """Initializes the environment's observation space."""
         
         self.observation_space = spaces.Dict({
 
@@ -285,25 +267,28 @@ class RidehailEnv(gym.Env):
             # Second element is the day of the week
             "dow": spaces.Discrete(7),
 
-            # Third element indicates whether there is a new request
-            "is_new_request": spaces.Discrete(2),
-
-            # Fourth element indicates the number of pending requests.
-            # The practical bounds on this are probably quite small, but the theoretical bound
-            # is the number of requests in the episode (+1 to get the length of the range including 0)
-            "num_pending_requests": spaces.Discrete(self._num_requests+1),
-
-            # Fifth element is the new request's location, a Box of shape (2,2)
-            #
-            # [[origin_x, origin_y], [dest_x, dest_y]]
-            # Values bounded by x and y ranges
-            "request": spaces.Box(
-                low=np.tile([self.x_range[0], self.y_range[0]], 2).reshape(2,2),
-                high=np.tile([self.x_range[1], self.y_range[1]], 2).reshape(2,2),
+            # Third element indicates the locations of pending requests
+            "request_locs": spaces.Box(
+                low=(
+                    np.tile([self.x_range[0], self.y_range[0]], self.num_pending_requests * 2)
+                    .reshape(self.num_pending_requests,2,2)
+                ),
+                high=(
+                    np.tile([self.x_range[1], self.y_range[1]], self.num_pending_requests * 2)
+                    .reshape(self.num_pending_requests,2,2)
+                ),
                 dtype=np.float64
             ),
 
-            # Sixth, vehicle locations, a Box of shape (V, 2)
+            # Fourth element indicates the release time of the pending requests
+            "request_times": spaces.Box(
+                low=0,
+                high=self._MAX_TIME,
+                shape=(self.num_pending_requests,),
+                dtype=np.float64
+            ),
+
+            # Fifth, vehicle locations, a Box of shape (V, 2)
             #
             # [[v0x, v0y], [v1x, v1y], ... [vVx, vVy]]
             # Values bounded by x and y ranges
@@ -313,13 +298,13 @@ class RidehailEnv(gym.Env):
                 dtype=np.float64
             ),
 
-            # Seventh element contains vehicles' job types
+            # Sixth element contains vehicles' job types
             #
             # [[v0j0m, v0j1m, v0j2m], [v1j0m, v1j1m, v1j2m], ... [vVj0m, vVj1m, vVj2m]]
             # Values are those for Jobs: 0, 1, 2, 3, 4 (idle, reposition, setup, process, and null)
             "v_jobs": spaces.MultiDiscrete(np.full((self._V, 3), len(Jobs))),
 
-            # Eighth element are vehicles' jobs' locations:
+            # Seventh element are vehicles' jobs' locations:
             #
             # Shape is (num_vehicles, MAX_JOBS, 2 (origin/destination), 2 (x/y))
             # Values are all bounded by x and y ranges
@@ -334,7 +319,34 @@ class RidehailEnv(gym.Env):
                 ),
                 dtype=np.float64),
         })
-    
+
+    def _set_observation_space(self) -> None:
+        """Updates the environment's observation space."""
+
+        # Update the spaces that depend on the number of pending requests.
+
+        # Check to confirm that we need to update the observation space's shape
+        if self.observation_space.spaces["request_times"].shape != (self.num_pending_requests,):
+
+            self.observation_space.spaces["request_locs"] = spaces.Box(
+                low=(
+                    np.tile([self.x_range[0], self.y_range[0]], self.num_pending_requests * 2)
+                    .reshape(self.num_pending_requests,2,2)
+                ),
+                high=(
+                    np.tile([self.x_range[1], self.y_range[1]], self.num_pending_requests * 2)
+                    .reshape(self.num_pending_requests,2,2)
+                ),
+                dtype=np.float64
+            )
+
+            self.observation_space.spaces["request_times"] = spaces.Box(
+                low=0,
+                high=self._MAX_TIME,
+                shape=(self.num_pending_requests,),
+                dtype=np.float64
+            )
+
 
     def xy_to_zone(self, xys: np.ndarray) -> np.ndarray:
         """Converts an array of XY coordinates into an array of taxi zone IDs."""
@@ -966,14 +978,18 @@ class RidehailEnv(gym.Env):
             self._next_request_idx += 1
 
         # Purge (reject) any pending requests that have been around longer than the MAX_WAIT time
-        self._requests.loc[self._requests["vehicle"].isna() & (self.time - self._requests["time"] > self._MAX_WAIT), "rejected"] = True
+        self._requests.loc[
+            self._requests["vehicle"].isna() & (self.time - self._requests["time"] > self._MAX_WAIT),
+            "rejected"
+        ] = True
 
         # Update the total accumulated rewards
         self.rewards += reward
 
-        # Set the number of assignable requests and update the action space
+        # Set the number of assignable requests and update the action and observation spaces
         self.num_pending_requests = self._get_num_pending_requests()
         self._set_action_space()
+        self._set_observation_space()
         
         # Create the observation to send to the agent
         obs = self._make_state()
@@ -1005,6 +1021,15 @@ class RidehailEnv(gym.Env):
 
         # Initialize the episode's requests
         self._generate_requests()
+        
+        # Note that there is no current request and update the action and observation spaces
+        self._is_new_request = False
+        self.num_pending_requests = 0
+        self._set_observation_space()
+        self._set_action_space()
+
+        # And that the next request to arise will be the first (zeroth) request.
+        self._next_request_idx = 0
 
         # Generate the initial state
         obs = self._make_state()
@@ -1018,6 +1043,8 @@ class RidehailEnv(gym.Env):
     def _make_state(self):
         """Create the current agent-facing state."""
 
+        curr_requests = self._get_pending_requests()
+
         obs = {
 
             # Episode time
@@ -1026,15 +1053,21 @@ class RidehailEnv(gym.Env):
             # Day of the week
             "dow": self._dow,
 
-            # Whether there is a new request
-            "is_new_request": int(self._is_new_request),
+            # Where are the pending requests
+            "request_locs": (
+                curr_requests.loc[:, ["ox", "oy", "dx", "dy"]]
+                .to_numpy()
+                .reshape(self.num_pending_requests, 2, 2)
+                .astype(np.float64)
+            ),
 
-            # How many pending requests are there
-            "num_pending_requests": self.num_pending_requests,
-
-            # Location of the new request
-            # [[origin_x, origin_y], [dest_x, dest_y]]
-            "request": self.new_request,
+            # When were the pending requests released
+            "request_times": (
+                curr_requests.loc[:, "time"]
+                .to_numpy()
+                .reshape(self.num_pending_requests, )
+                .astype(np.float64)
+            ),
 
             # Vehicle locations
             # [[v0x, v0y], [v1x, v1y], ... [vVx, vVy]]
@@ -1398,14 +1431,6 @@ class RidehailEnv(gym.Env):
         requests["released"] = False
         requests["rejected"] = False
         requests["vehicle"] = None
-
-        # Note that there is no current request and update the action space
-        self._is_new_request = False
-        self.num_pending_requests = 0
-        self._set_action_space()
-
-        # And that the next request to arise will be the first (zeroth) request.
-        self._next_request_idx = 0
 
         # Set the env's current request set
         self._requests = requests
