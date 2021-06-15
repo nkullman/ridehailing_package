@@ -1148,6 +1148,8 @@ class RidehailEnv(gym.Env):
     
     def render(self, mode='human', close=False):
 
+        raise NotImplementedError("Rendering not yet supported...")
+
         # fig, axes = plt.subplots()
 
         # # Define axes' bounds, hide grid and ticks, and set the axes to use identical scales

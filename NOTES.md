@@ -10,10 +10,10 @@
 
 ### Longer term, lower priority
 
-- Have `render` take an `obs=None` arg that, if not `None`, would call a special `_render_obs` function that would plot the state `obs` rather than the environment's current state. (Is this feasible?)
+- Have `render` take an `obs=None` argument that, if not `None`, would call a special `_render_obs` function that would plot the state `obs` rather than the environment's current state. (Is this feasible?)
 - Investigate ways to sample faster for getting request indices and then the subsequent `.loc` call. These seem to be what takes awhile in `reset` (will these be faster on subsequent `reset` calls? just slow for the first episode?)
-- Allow user to pass in filenames for requests, lots, geometries, env's parameters, etc.
-- Make our action and observation spaces subclass gym.Spaces.Dict, and override their .sample() function
+- Allow user to pass in filenames for requests, lots, geometries, environment's parameters, etc.
+- Make our action and observation spaces subclass `gym.Spaces.Dict`, and override their .sample() function
 - Set `_EPS_START_HR` according to the trips file loaded: use the value of the hour that marks the beginning of the slowest 2-hr window
 - Generalize discretized time from hour to any arbitrary time unit
 
