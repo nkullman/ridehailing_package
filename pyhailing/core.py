@@ -50,10 +50,10 @@ class RidehailGeometry():
     # ultimate result: puzone, dozone, hr, AVG(trip_time)
     # filter to pu/dozones we want, where putime/dotime are valid (all possible sources)
     _MANHATTAN_SPEEDS = {
-        "min": 0.0022352, # TODO update to 5 mph (in km/s)
+        "min": 0.0022352, # 5 mph (in km/s)
         # "mean": 0.0036, # value used in original paper
         "mean": 0.011176, # 25 mph in km/s: the most common speed limit in Manhattan
-        "max": 0.0134112, # TODO update to 30 mph (in km/s)
+        "max": 0.0134112, # 30 mph (in km/s)
     }
 
 
@@ -556,17 +556,21 @@ class RidehailGeometry():
         return np.array((1 - sqrt_r1) * tri[0] + (sqrt_r1 * (1 - r2)) * tri[1] + (r2 * sqrt_r1) * tri[2])
 
         
-        #     # TODO vectorize
-        #     # we assume zone_id is array-like of zone ids
-        #     tris = 'TODO' Need to get a (zone_ids x max_num_tris) array.
-        # Then do this kinda thing where we sample from each row simultaneously
-        # wts = rnr_qs == np.nanmax(rnr_qs,axis=1,keepdims=True) # max vals are 1, rest are 0
-        # wts = wts / wts.sum(1)[:,None] # divide thru by number of max vals so that row sums are 1
-        # return (wts.cumsum(1) > self.rng.rand(wts.shape[0])[:,None]).argmax(1) # random selection from the maxs for each EV
-        # ...
+        # TODO vectorize this function's sampling so that `zone_ids` could be an np.ndarray of ints
+        #
+        # Then do this kinda thing where we sample from each row simultaneously.
+        # Need a matrix ("tris") that has a row for each zone, a column for each triangle in the zone.
+        # All rows need to be equal length, where the length is the max num of triangles for any zone.
+        # Values are the tri_rel_areas, right-padded with nans wgere rows (zones) have fewer triangles.
+        # Then do like below to sample a triangle sample from each zone.
+        #
+        # sampled_tris = (tris.cumsum(1) > self.pt_in_zone_sampler.uniform(self.num_zones)[:,None]).argmax(1)
+        #
+        # Then something like...
+        # 
         #     n = len(zone_id)
-        #     sqrt_r1 = np.sqrt(rng.uniform(size=n))
-        #     r2 = rng.uniform(size=n)
+        #     sqrt_r1 = np.sqrt(self.pt_in_zone_sampler.uniform(self.num_zones))
+        #     r2 = self.pt_in_zone_sampler.uniform(self.num_zones)
         #     return np.array(
         #         (1-sqrt_r1)*tris[:,0] + (sqrt_r1*(1-r2))*tris[:,1] + (r2*sqrt_r1)*tris[:,2]
         #     )
@@ -578,7 +582,6 @@ class RidehailGeometry():
         Assumes that travel is happening in hour hr (defaults to 9am).
 
         """
-        # TODO future generalization: hr can just be some discretized time value
 
         if pairwise and not isinstance(hr, (int, np.integer)):
             raise ValueError("Pairwise travel times can only be computed for a single time.")

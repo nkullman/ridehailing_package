@@ -30,7 +30,6 @@ class RidehailEnv(gym.Env):
 
     """
 
-    # TODO set according to the trips file loaded: value of the hour that marks the beginning of the slowest 2-hr window.
     _EPS_START_HR = 3
     _HRS_PER_DAY = 24
     _S_PER_MIN = 60
@@ -60,7 +59,7 @@ class RidehailEnv(gym.Env):
 
         logging.info("Ridehail environment being initialized...")
 
-        self._num_vehicles = self._V = num_vehicles
+        self.num_vehicles = self._V = num_vehicles
         self._num_requests = self._R = num_requests
         self._stochastic = stochastic
         self._distances = distances
@@ -70,8 +69,6 @@ class RidehailEnv(gym.Env):
 
         self._load_trips()
         
-        # TODO set self._EPS_START_HR via a groupby on trips 'hr'.
-        # Choose the value of the hour that marks the beginning of the slowest 2-hr window.
         self._geom = RidehailGeometry(seed, distances, stochastic)
         self._geom.add_init_weights_to_lots(self._trips_df, self._EPS_START_HR)
 
@@ -771,9 +768,8 @@ class RidehailEnv(gym.Env):
 
         """
 
-        # TODO should any assignment that is not immediately assigned incur some penalties for cust having to wait for a response?
-        # TODO note to the user that requests are ordered oldest to newest (newest request always has index -1)
-        # TODO note to the user that rejections override assignments (if req rejected, any assignment of a vehicle to it is ignored.)
+        # IDEA should agents incur a penalty for the time that requests have to wait before assignment?
+        # (if they sit pending for awhile)
 
         # Make sure the user wasn't too slow to provid an action
         if self._action_was_slow():
@@ -1152,8 +1148,6 @@ class RidehailEnv(gym.Env):
     
     def render(self, mode='human', close=False):
 
-        # TODO 
-
         # fig, axes = plt.subplots()
 
         # # Define axes' bounds, hide grid and ticks, and set the axes to use identical scales
@@ -1324,9 +1318,6 @@ class RidehailEnv(gym.Env):
 
     def get_random_action(self, ):
         """Returns a random action."""
-
-        # TODO make our action space subclass gym.Spaces.Dict, and override the .sample() function
-        # with the function here.
 
         # Initialize our random action
         random_action = self.action_space.sample()
