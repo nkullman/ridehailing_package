@@ -9,7 +9,7 @@ def get_action(env, obs, noop: bool=False):
 def main():
     import matplotlib.pyplot as plt
 
-    env = RidehailEnv(distances="manhattan_rotated")
+    env = RidehailEnv(num_requests=100)
     obs = env.reset()
 
     # rgb = env.render()
