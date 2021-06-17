@@ -55,11 +55,37 @@ class RidehailEnv(gym.Env):
         action_timelimit: float=np.inf,
         max_interdecision_time: Optional[float]=None,
     ):
-        """TODO"""
+        """Instantiates a ridehailing environment.
+        
+        Inputs:
+        
+            num_vehicles: The number of vehicles in the agent's fleet.
+            
+            num_requests: The number of requests that should arise over a 24 hr period.
+            
+            stochastic: Whether vehicles' travel times should be subject to randomness
+                (NOTE: stochastic travel times are not yet implemented)
+
+            distances: How to measure distances between locations. Options are
+                "euclidean" and "manhattan"
+
+            seed: A seed for the environment's uncertainties.
+                (NOTE: This applies to environment dynamics but does not yet apply
+                to the sampling of random states/actions from the environment's
+                state/action spaces.)
+
+            action_timelimit: How much wall-clock time (in seconds) the agent is
+                permitted to provide an action. Default (inf) is no time limit.
+
+            max_interdecision_time: The maximum amount of (simulated) time to allow
+                between decision epochs (in seconds). The default behavior is to
+                only trigger decision epochs upon the arrival or completion of a request.
+                
+        """
 
         logging.info("Ridehail environment being initialized...")
 
-        self.num_vehicles = self._V = num_vehicles
+        self._num_vehicles = self._V = num_vehicles
         self._num_requests = self._R = num_requests
         self._stochastic = stochastic
         self._distances = distances
@@ -185,6 +211,11 @@ class RidehailEnv(gym.Env):
     def _lots(self):
         return self._geom.lots
 
+
+    @property
+    def lots(self):
+        return self._geom.lots.loc[:, ["x", "y"]].copy()
+
     
     @property
     def _zones(self):
@@ -195,6 +226,11 @@ class RidehailEnv(gym.Env):
     def curr_state(self):
         """Returns the current state of the environment."""
         return self._make_state()
+
+    @property
+    def num_vehicles(self):
+        """Number of vehicles in the fleet."""
+        return self._num_vehicles
     
     
     def _pending_requests_mask(self) -> pd.Series:
