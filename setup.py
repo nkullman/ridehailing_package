@@ -2,7 +2,7 @@ import setuptools
 
 setuptools.setup(
     name="pyhailing",
-    version="0.0.2",
+    version="0.0.3",
     url="https://github.com/nkullman/ridehailing_package",
     author="Nicholas Kullman",
     author_email="nick.kullman@gmail.com",
