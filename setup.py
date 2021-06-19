@@ -14,6 +14,7 @@ setuptools.setup(
         "gym",
         "matplotlib",
         "numpy",
+        "pandas",
         "scipy",
     ],
     classifiers=[
