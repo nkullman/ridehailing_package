@@ -31,6 +31,8 @@ class RidehailEnv(gym.Env):
     """
 
     _EPS_START_HR = 3
+    _EPS_START_T_WINDOW = 8
+    _NUM_T_WINDOW = 24 * 4
     _HRS_PER_DAY = 24
     _S_PER_MIN = 60
     _S_PER_HR = 3600
@@ -96,7 +98,7 @@ class RidehailEnv(gym.Env):
         self._load_trips()
         
         self._geom = RidehailGeometry(seed, distances, stochastic)
-        self._geom.add_init_weights_to_lots(self._trips_df, self._EPS_START_HR)
+        self._geom.add_init_weights_to_lots(self._trips_df, self._EPS_START_T_WINDOW)
 
 
         # What episode are we on
@@ -151,18 +153,25 @@ class RidehailEnv(gym.Env):
         self._geom.reseed()
 
     
+    def _get_pct_trips_by(self, cols: List[str]) -> pd.DataFrame:
+        """Get the percentage of trips by the last dimension in cols."""
+
+        trips_by_cols = self._trips_df.groupby(cols)["n_trips"].sum()
+
+        if len(cols) == 1:
+            return trips_by_cols / trips_by_cols.sum()
+        else:
+            return trips_by_cols / self._trips_df.groupby(cols[:-1])["n_trips"].sum()
+
+    
     def _load_trips(self) -> None:
-        trips_fname = pkg_resources.resource_stream(__name__, 'data/trips.hdf5').name
-        self._trips_df = pd.read_hdf(trips_fname, dtype=int)
-        
-        # Note the number of total trips
-        self._total_trips = len(self._trips_df)
+        """Load the CSV containing trips data and save some useful info for later."""
 
-        # A groupby on the day of the year
-        self._doy_grouped_trips = self._trips_df.groupby('doy')
+        trips_fname = pkg_resources.resource_stream(__name__, 'data/trips.csv').name
+        self._trips_df = pd.read_csv(trips_fname, dtype=int)
 
-        # For sampling, get the percent of the total trips for each DOY
-        self._doy_wts = self._doy_grouped_trips.size() / self._total_trips
+        # Record the percentage of trips by weekday
+        self._dow_wts = self._get_pct_trips_by(["dow"])
 
 
     @property
@@ -1249,6 +1258,8 @@ class RidehailEnv(gym.Env):
                    fancybox=True, shadow=True, ncol=3)
 
         # Add a title with some info about the current state
+        # TODO sampled_starttime is no more.
+        # Update to just show a day of the week
         time = self._sampled_starttime + datetime.timedelta(seconds=self.time)
         time_str = datetime.datetime.strftime(time, self._TIME_STR_FORMAT_PRINT)
         status_string = f"{time_str}\nReward: ${self.rewards:.2f}"
@@ -1382,36 +1393,28 @@ class RidehailEnv(gym.Env):
     def _generate_requests(self) -> None:
         """Sets the environment's requests for an episode."""
 
-        # First, sample a day of the year to serve as our current episode.
-        doy = self._request_sampler.choice(self._doy_wts.index, p=self._doy_wts.values)
-        
-        # Note the sampled start time, day of year, and day of week
-        self._sampled_starttime = (
-            datetime.datetime(self._YR, 1, 1)
-            + datetime.timedelta(days=int(doy-1), hours=self._EPS_START_HR)
-        )
-        self._doy = doy
-        self._dow = self._sampled_starttime.weekday()
+        # First, sample a day of the week in which the episode is to take place
+        dow = self._request_sampler.choice(self._dow_wts.index, p=self._dow_wts.values)
+        self._dow = dow
 
-        # Sample requests
-        sampled_request_idxs = self._request_sampler.choice(
-            self._doy_grouped_trips.indices[self._doy],
-            replace=False,
-            size=self._num_requests,
+        # Then sample requests for that day of the week
+        requests = self._trips_df.loc[self._trips_df.dow == dow, :].sample(
+            n=self._num_requests,
+            replace=True,
+            random_state=self._request_sampler.bit_generator,
+            weights=self._trips_df["n_trips"]
         )
-        requests = self._trips_df.loc[sampled_request_idxs, :].drop(["dow", "doy"], axis=1)
 
-        # Add the time when the request pops up (in terms of episode time)
-        requests['time'] = (
-            # The time is the number of hours that have elapsed, converted to seconds
-            ((requests['hr'] - self._EPS_START_HR) % self._HRS_PER_DAY) * self._S_PER_HR
-            # Plus the number of minutes that have elapsed, converted to seconds
-            + requests['min'] * self._S_PER_MIN
-            # Plus the number of seconds
-            + requests['sec']
-            # And milliseconds
-            + requests['msec'] / 1000.0
+        # Adjust the requests' starting window according to the index we
+        # denote as episodes' beginning
+        requests["t_15min"] = (requests["t_15min"] - self._EPS_START_T_WINDOW) % self._NUM_T_WINDOW
+
+        # Set requests times
+        requests["time"] = (
+            15 * 60 * requests["t_15min"]
+            + self._request_sampler.uniform(size=self._num_requests) * 15 * 60
         )
+        requests = requests.drop(["dow", "t_15min", "n_trips"], axis=1)
 
         # Make sure that all request times are valid
         assert ((0 < requests["time"]) & (requests["time"] < self._MAX_TIME)).all(), "There are requests with invalid release times."

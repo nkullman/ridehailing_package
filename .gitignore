@@ -132,8 +132,5 @@ dmypy.json
 # VSCode's folder
 .vscode
 
-# The big trips files
-pyhailing/data/trips.*
-
 # Tests, for now
 tests

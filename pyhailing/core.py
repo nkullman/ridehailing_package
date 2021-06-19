@@ -364,17 +364,21 @@ class RidehailGeometry():
         return self._yrange
 
 
-    def add_init_weights_to_lots(self, trips: pd.DataFrame, eps_init_hr: int) -> None:
+    def add_init_weights_to_lots(self, trips: pd.DataFrame, eps_init_t: int) -> None:
         """Add init_weights column to self.lots indicating probability of vehicle spawning."""
 
         # Given episodes' first hour, compute their last hour
-        eps_final_hr = (eps_init_hr - 1) % 24
+        eps_final_t = (
+            eps_init_t - 1
+            if eps_init_t != trips["t_15min"].min()
+            else trips["t_15min"].max()
+        )
 
         # Count the number of dropoffs in each zone in the final hour (zone, pct_drops)
         dropoffs_by_zone = (
-            trips.loc[trips['hr'] == eps_final_hr, :]
+            trips.loc[trips['t_15min'] == eps_final_t, :]
             .groupby('dozone')
-            .size()
+            ['n_trips'].sum()
             .rename("pct_dropoffs")
             .rename_axis("zone")
         )
