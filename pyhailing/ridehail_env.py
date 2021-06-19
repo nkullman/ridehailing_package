@@ -1372,7 +1372,7 @@ class RidehailEnv(gym.Env):
         random_action["req_assgts"][indices] = vals
 
         # Ensure that any vehicle requiring an assignment gets one.
-        needs_fixing = (self._vehicles["j1m"] == Jobs.NULL).to_numpy() & random_action["reposition"] == self._D
+        needs_fixing = (self._vehicles["j1m"] == Jobs.NULL).to_numpy() & (random_action["reposition"] == self._D)
         # Better ways to do this; for now, just send these vehicles to the first lot
         random_action["reposition"][needs_fixing] = 0
 
