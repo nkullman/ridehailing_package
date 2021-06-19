@@ -8,6 +8,7 @@ setuptools.setup(
     author_email="nick.kullman@gmail.com",
     description="An OpenAI gym environment for a ridehailing application",
     long_description=open('README.md').read(),
+    long_description_content_type="text/markdown",
     packages=setuptools.find_packages(),
     install_requires=[
         "gym",
