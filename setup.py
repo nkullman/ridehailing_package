@@ -19,7 +19,7 @@ setuptools.setup(
         'Programming Language :: Python',
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3.7',
-        "License :: OSI Approved :: Apache License",
+        "License :: OSI Approved :: Apache Software License",
     ],
     include_package_data=True,
     package_data={'': ['data/*']},
