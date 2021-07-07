@@ -66,7 +66,6 @@ class RidehailEnv(gym.Env):
             num_requests: The number of requests that should arise over a 24 hr period.
             
             stochastic: Whether vehicles' travel times should be subject to randomness
-                (NOTE: stochastic travel times are not yet implemented)
 
             distances: How to measure distances between locations. Options are
                 "euclidean" and "manhattan"

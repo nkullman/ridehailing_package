@@ -46,14 +46,9 @@ class RidehailGeometry():
     # The angle (in degrees) that Manhattan streets are offset from a pure North/East grid.
     _MANHATTAN_ANGLE = 29
 
-    # TODO to update and make more realistic, do a query from opendata:
-    # ultimate result: puzone, dozone, hr, AVG(trip_time)
-    # filter to pu/dozones we want, where putime/dotime are valid (all possible sources)
     _MANHATTAN_SPEEDS = {
-        "min": 0.0022352, # 5 mph (in km/s)
-        # "mean": 0.0036, # value used in original paper
-        "mean": 0.011176, # 25 mph in km/s: the most common speed limit in Manhattan
-        "max": 0.0134112, # 30 mph (in km/s)
+        "min": 0.00044704, #  1 mph (in km/s)
+        "max": 0.0268224,  # 60 mph (in km/s)
     }
 
 
@@ -67,10 +62,10 @@ class RidehailGeometry():
 
         Args:
             seed: Seed for the geometry's randomness
-            speed: Vehicles' mean speed sans traffic
             distances: Method to compute distances; must be one of the following:
                 "euclidean", "manhattan"
             stochastic: Whether travel times should be stochastic.
+
         """
 
         self.seed = seed
@@ -286,13 +281,8 @@ class RidehailGeometry():
     def _load_speeds(self) -> None:
 
         # Load the speeds data from file
-        try:
-            stream = pkg_resources.resource_stream(__name__, 'data/speeds.csv')
-            self.speeds = pd.read_csv(stream)
-        except:
-            logging.warning("Could not read speeds data from file. Using default speeds.")
-            self.speeds = self._create_default_speeds_df()
-
+        stream = pkg_resources.resource_stream(__name__, 'data/speeds.csv')
+        self.speeds = pd.read_csv(stream)
         self._check_speeds()
 
     
@@ -320,40 +310,6 @@ class RidehailGeometry():
             )
 
         
-    def _create_default_speeds_df(self) -> pd.DataFrame:
-
-        HRS_PER_DAY = 24
-        
-        # Start by creating a square dataframe that specifies a single mean speed for each pair of zones
-        speeds = pd.DataFrame(index=self.zones.index, columns=self.zones.index, data=self._MANHATTAN_SPEEDS["mean"])
-
-        # Melt the df to get a column for origin zone and destination zone
-        speeds = pd.melt(
-            # Start by moving the origin zone into the df
-            speeds.reset_index().rename(columns={"index": "zone_o"}),
-            # Keep that column fixed
-            id_vars="zone_o",
-            # Unpivot the rest of the columns, their names now corresponding to the destination zone.
-            var_name="zone_d",
-            # The values are the mean speed
-            value_name="speed_mean"
-        )
-
-        # Count the number of connections between zones
-        n_zn_cnxns = len(speeds)
-
-        # Speed data is assumed to be given hourly
-        speeds = pd.concat([speeds for hr in range(HRS_PER_DAY)], axis=0, ignore_index=True)
-
-        # Add on the 'hr' column
-        speeds["hr"] = np.arange(HRS_PER_DAY).repeat(n_zn_cnxns)
-
-        # Add on a column for the standard deviation. 0 by default
-        speeds["speed_stddev"] = 0
-
-        return speeds
-
-
     @property
     def x_range(self):
         return self._xrange
@@ -497,9 +453,14 @@ class RidehailGeometry():
 
         # Get the distance from xys to zone centroids
         dists = self._dist_euclidean(xys, self.zone_locs, pairwise=True)
-        
-        # Return the closest one
-        return np.argmin(dists, axis=-1)
+
+        # Get the index (not ID) of the closest zone
+        closest = np.argmin(dists, axis=-1)
+
+        if np.isscalar(closest):
+            return self.zones.at[closest, "zone_id"]
+        else:
+            return self.zones.loc[closest, "zone_id"].to_numpy()
 
 
     def _dist_manhattan(self, o: np.ndarray, d: np.ndarray, pairwise: bool) -> np.ndarray:
@@ -580,7 +541,14 @@ class RidehailGeometry():
         #     )
     
     
-    def travel_time(self, o: np.ndarray, d: np.ndarray, hr: Union[int, np.ndarray]=9, mean: bool=False, pairwise: bool=False) -> np.ndarray:
+    def travel_time(
+        self,
+        o: np.ndarray,
+        d: np.ndarray,
+        hr: Union[int, np.ndarray]=9,
+        mean: bool=False,
+        pairwise: bool=False
+    ) -> np.ndarray:
         """Computes travel times between origin(s) o and destinations (d).
 
         Assumes that travel is happening in hour hr (defaults to 9am).
@@ -625,10 +593,10 @@ class RidehailGeometry():
             dists = np.asarray(dists).reshape(-1)
 
         # Create a df for the required travel time computations.
-        df = pd.DataFrame(data={"zone_o": zones_o, "zone_d": zones_d, "hr": hr, "dist": dists})
+        df = pd.DataFrame(data={"puzone": zones_o, "dozone": zones_d, "hr": hr, "dist": dists})
         
         # Join on the speed data
-        df = df.merge(self.speeds, how="left", on=["zone_o", "zone_d", "hr"])
+        df = df.merge(self.speeds, how="left", on=["puzone", "dozone", "hr"])
 
         # Get the realized speeds
         if mean:
