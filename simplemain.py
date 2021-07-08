@@ -12,8 +12,9 @@ def main():
     env = RidehailEnv(num_requests=100)
     obs = env.reset()
 
-    # rgb = env.render()
-    # plt.imshow(rgb)
+    rgb = env.render()
+    plt.imshow(rgb)
+    plt.show()
 
     terminal = False
     reward = 0
@@ -27,8 +28,9 @@ def main():
         reward += new_rwd
         obs = next_obs
 
-        # rgb = env.render()
-        # plt.imshow(rgb)
+        rgb = env.render()
+        plt.imshow(rgb)
+        plt.show()
 
     print(reward)
     print(obs)

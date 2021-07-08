@@ -2,7 +2,6 @@
 
 ## Shorter-term, higher priority
 
-- Fix rendering
 - Improve documentation
 
 ## Longer term, lower priority

@@ -289,18 +289,6 @@ class RidehailGeometry():
     def _check_speeds(self) -> None:
         """Some simple checks on our speeds data."""
 
-        # If the user requested a deterministic environment, then we force the standard
-        # deviation on our speeds data to be 0.
-        if not self.stochastic:
-            # If the user provided non-zero speeds, then warn about this change
-            if any(self.speeds["speed_stddev"] > 0):
-                logging.warning(
-                    "Speeds data implies stochastic travel times (nonzero standard deviations), "
-                    "but non-stochastic environment requested. Using non-stochastic environment "
-                    "and setting all standard deviations to zero."
-                )
-            self.speeds["speed_stddev"] = 0
-
         # If the user requested a stochastic environment but all standard deviations are 0,
         # we warn them about this (but do nothing).
         if self.stochastic and all(self.speeds["speed_stddev"] == 0):

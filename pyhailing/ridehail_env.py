@@ -1,13 +1,12 @@
 from typing import List, Optional, Tuple, Union
-import datetime
 import logging
-from numpy import random
+import math
 import pkg_resources
 import time
 
 import gym
 from gym import spaces
-import matplotlib.pyplot as plt
+from PIL import Image, ImageDraw
 import numpy as np
 import pandas as pd
 
@@ -1166,139 +1165,126 @@ class RidehailEnv(gym.Env):
         return pending_reqs[["ox", "oy"]].to_numpy(), pending_reqs[["dx", "dy"]].to_numpy()
     
     
+    def _scale_draw_size(self, size:float) -> float:
+        return (size/100) * self._img_width_px
+    
+    
     def _prep_rendering(self) -> None:
 
-        self._fig, self._axes = plt.subplots()
+        # Define some useful values for drawing
+        self._min_x = self.x_range[0]
+        self._span_x = self.x_range[1] - self.x_range[0]
+        self._min_y = self.y_range[0]
+        self._span_y = self.y_range[1] - self.y_range[0]
+        px_per_in = 300  # desired resolution
+        img_height_in = 6
+        self._img_height_px = img_height_in * px_per_in
+        self._img_width_px = math.ceil(self._img_height_px * (self._span_x / self._span_y))
 
-        # Define axes' bounds, hide grid and ticks, and set the axes to use identical scales
-        self._axes.set_xlim(self.x_range)
-        self._axes.set_ylim(self.y_range)
-        self._axes.axis('off')
-        self._axes.set_aspect('equal')
+        def _draw_zone(coords: np.ndarray, drw) -> None:
+            xy = list(zip(
+                (coords[:,0] - self._min_x) / self._span_x * self._img_width_px,
+                (coords[:,1] - self._min_y) / self._span_y * self._img_height_px
+            ))
+            drw.polygon(xy, outline=(0,0,0,255))
 
-        # Plot the taxi zones
-        self._plt_zonepolys = self._axes.add_collection(self._geom.zone_polys)
+        def _draw_lot(coords: np.ndarray, drw, size=2, sides=4) -> None:
+            size = self._scale_draw_size(size)
+            xy = (
+                (coords['x'] - self._min_x) / self._span_x * self._img_width_px,
+                (coords['y'] - self._min_y) / self._span_y * self._img_height_px
+            )
+            drw.regular_polygon((xy, size), sides, fill=(0,191,255,int(0.5*255)))
 
-        # Plot the lots
-        self._plt_lots = self._axes.scatter(
-            x=self._lots['x'].values,
-            y=self._lots['y'].values,
-            marker='s',
-            c="deepskyblue",
-            label="lot",
-            alpha=0.5
-        )
+        # Initialize the canvas and the drawer
+        img = Image.new('RGB', (self._img_width_px, self._img_height_px), color=(255,255,255,0))
+        drw = ImageDraw.Draw(img, 'RGBA')
+
+        # Draw the zones
+        self._geom.zones['coordinates'].apply(_draw_zone, args=(drw,))
+
+        # Draw the lots
+        self.lots[['x','y']].apply(_draw_lot, args=(drw,), axis=1)
+
+        # Done drawing.
+        del drw
+
+        # Save this base rendering
+        self._base_render = np.array(img)
+
+    
+    def _draw_reqs(self, drw, req_os, req_ds, color, size=4):
+
+        size = self._scale_draw_size(size)
+
+        # Adjust their coordinates to lie on the canvas
+        req_os[:, 0] = (req_os[:, 0] - self._min_x) / self._span_x * self._img_width_px
+        req_os[:, 1] = (req_os[:, 1] - self._min_y) / self._span_y * self._img_height_px
+        req_ds[:, 0] = (req_ds[:, 0] - self._min_x) / self._span_x * self._img_width_px
+        req_ds[:, 1] = (req_ds[:, 1] - self._min_y) / self._span_y * self._img_height_px
+
+        for o, d in zip(req_os, req_ds):
+            # Draw circles for requests' origins
+            drw.ellipse(
+                tuple(o-size/2) + tuple(o+size/2),
+                outline=color
+            )
+
+            # Draw triangles for requests' destinations
+            drw.regular_polygon(
+                (tuple(d), size),
+                3,
+                rotation=180,
+                fill=color
+            )
+
+            # Connect them with lines
+            drw.line(
+                [tuple(o),tuple(d)],
+                width=1,
+                fill=color
+            )
+
+
+    def _draw_vehicles(self, drw, size=4, fill=(255,215,0), outline=(192,192,192)):
+        size = self._scale_draw_size(size)
+        xs = (self._vehicles["x"] - self._min_x) / self._span_x * self._img_width_px
+        ys = (self._vehicles["y"] - self._min_y) / self._span_y * self._img_height_px
+        for x,y in zip(xs,ys):
+            drw.ellipse(
+                (x-size/2, y-size/2) + (x+size/2, y+size/2),
+                fill=fill,
+                outline=outline
+            )
     
     
     def render(self, mode='human', close=False):
 
-        raise NotImplementedError("Rendering not yet supported...")
+        # NOTE if this doesn't look right, could just save the coords-to-draw in prep_rendering
+        # and create the image from scratch here.
 
-        # fig, axes = plt.subplots()
+        # Load the base render with zones and lots
+        img = Image.fromarray(self._base_render)
+        drw = ImageDraw.Draw(img, 'RGB')
 
-        # # Define axes' bounds, hide grid and ticks, and set the axes to use identical scales
-        # axes.set_xlim(self.x_range)
-        # axes.set_ylim(self.y_range)
-        # axes.axis('off')
-        # axes.set_aspect('equal')
 
-        # # Plot the taxi zones
-        # axes.add_collection(self._geom.zone_polys)
-
-        # # Plot the lots
-        # axes.scatter(
-        #     x=self._lots['x'].values,
-        #     y=self._lots['y'].values,
-        #     marker='s',
-        #     c="deepskyblue",
-        #     label="lot",
-        #     alpha=0.5
-        # )
-
-        # Plot the requests that have been assigned but are not yet completed
+        # Draw the requests that have been assigned but are not yet completed.
         req_os, req_ds = self._get_assgd_req_locs()
-        # Plot the origins (o's)...
-        plt_assgd_req_os = self._axes.scatter(x=req_os[:, 0], y=req_os[:, 1], marker='o', facecolors='none', edgecolors='lightpink')
-        # ...  and destinations (x's).
-        plt_assgd_req_ds = self._axes.scatter(x=req_ds[:, 0], y=req_ds[:, 1], marker='x', c='lightpink')
-        # And connect them
-        plt_assgd_req_cnxns = self._axes.plot(
-            # Our x and y arrays have a column for each line (request) and a row for each pt in the line (its origin and destination)
-            np.vstack([req_os[:, 0], req_ds[:, 0]]),
-            np.vstack([req_os[:, 1], req_ds[:, 1]]), 
-            c='lightpink',
-        )
+        if len(req_os) > 0:
+            # lightpink coloring for assigned requests
+            self._draw_reqs(drw, req_os, req_ds, color=(255, 182, 193))
 
-        # Plot the pending requests (active but unassigned).
+        # Draw the pending requests (active but unassigned).
         req_os, req_ds = self._get_pending_req_locs()
-        # Plot the origins (o's)...
-        plt_pending_req_os = self._axes.scatter(x=req_os[:, 0], y=req_os[:, 1], marker='o', facecolors='none', edgecolors='r', label="Request origin")
-        # ...  and destinations (x's).
-        plt_pending_req_ds = self._axes.scatter(x=req_ds[:, 0], y=req_ds[:, 1], marker='x', c='red')
-        # And connect them
-        plt_pending_req_cnxns = self._axes.plot(
-            np.vstack([req_os[:, 0], req_ds[:, 0]]),
-            np.vstack([req_os[:, 1], req_ds[:, 1]]), 
-            c='r',
-        )
+        if len(req_os) > 0:
+            # Red coloring for pending requests
+            self._draw_reqs(drw, req_os, req_ds, color=(255, 0, 0))
 
-        # Plot the vehicles
-        plt_vehicles = self._axes.scatter(
-            x=self._vehicles["x"].values,
-            y=self._vehicles["y"].values,
-            label='vehicle',
-            color='gold',
-            edgecolors='silver',
-            marker='o'
-        )
-        
-        # Put a legend below x axis
-        plt_legend = self._axes.legend(loc='upper center', bbox_to_anchor=(0.5, -0.05),
-                   fancybox=True, shadow=True, ncol=3)
+        # Draw the vehicles
+        self._draw_vehicles(drw)
 
-        # Add a title with some info about the current state
-        # TODO sampled_starttime is no more.
-        # Update to just show a day of the week
-        time = self._sampled_starttime + datetime.timedelta(seconds=self.time)
-        time_str = datetime.datetime.strftime(time, self._TIME_STR_FORMAT_PRINT)
-        status_string = f"{time_str}\nReward: ${self.rewards:.2f}"
-
-        # If episode is over, add this to the title info
-        if self.time >= self._MAX_TIME:
-            status_string = f"TERMINAL STATE\n{status_string}"
-
-        # Stick it on the plot
-        self._axes.set_title(status_string)
-        
-        # Render the canvas and get it as an rgbarray to return to the user
-        self._fig.canvas.draw_idle()
-        rgb_array = np.frombuffer(self._fig.canvas.tostring_rgb(), dtype=np.uint8)
-        rgb_array = rgb_array.reshape(self._fig.canvas.get_width_height()[::-1] + (3,))
-
-        # We have the RGB array we need. Remove the temporary graph elements we created here
-        temp_plt_objs = [
-            plt_assgd_req_os,
-            plt_assgd_req_ds,
-            plt_assgd_req_cnxns,
-            plt_pending_req_os,
-            plt_pending_req_ds,
-            plt_pending_req_cnxns,
-            plt_vehicles,
-            plt_legend
-        ]
-
-        for plt_obj in temp_plt_objs:
-            # The request connections are lists of lines.
-            # We want to remove each of those lines from our axes.
-            if isinstance(plt_obj, list):
-                for _ in range(len(plt_obj)):
-                    line = plt_obj.pop()
-                    self._axes.lines.remove(line)
-                    del line
-            else:
-                plt_obj.remove()
-
-        return rgb_array
+        del drw
+        return np.flipud(np.array(img))
 
 
     def _initialize_vehicles(self) -> None:
