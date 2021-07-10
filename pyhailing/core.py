@@ -285,6 +285,8 @@ class RidehailGeometry():
         self.speeds = pd.read_csv(stream)
         self._check_speeds()
 
+        self.speeds_orig = self.speeds.copy()
+
     
     def _check_speeds(self) -> None:
         """Some simple checks on our speeds data."""

@@ -234,10 +234,21 @@ class RidehailEnv(gym.Env):
         """Returns the current state of the environment."""
         return self._make_state()
 
+
     @property
     def num_vehicles(self):
         """Number of vehicles in the fleet."""
         return self._num_vehicles
+
+
+    @property
+    def trips_data(self):
+        return self._trips_df.copy()
+
+
+    @property
+    def speeds_data(self):
+        return self._geom.speeds_orig.copy()
     
     
     def _pending_requests_mask(self) -> pd.Series:
