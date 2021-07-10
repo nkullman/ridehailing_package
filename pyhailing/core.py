@@ -55,31 +55,24 @@ class RidehailGeometry():
     def __init__(
         self,
         seed: int,
-        distances: str = "manhattan",
         stochastic: bool = False,
     ):
         """Initializes a RidehailGeometry object.
 
         Args:
             seed: Seed for the geometry's randomness
-            distances: Method to compute distances; must be one of the following:
-                "euclidean", "manhattan"
             stochastic: Whether travel times should be stochastic.
 
         """
 
         self.seed = seed
         self.stochastic = stochastic
-        self.distances = distances
-
-        self.rotated = self.distances == "manhattan"
-        self._distance_func = self._get_distance_function(distances)
 
         # Load the zones file and populate related class parameters
-        self._load_zones(rotate=self.rotated)
+        self._load_zones()
 
         # Load the lots file and populate related class parameters
-        self._load_lots(rotate=self.rotated)
+        self._load_lots()
 
         # Load speed-related data
         self._load_speeds()
@@ -116,21 +109,7 @@ class RidehailGeometry():
         self.pt_in_zone_sampler = np.random.default_rng(spawns[1])
 
     
-    def _get_distance_function(self, distances: str) -> Callable[..., Any]:
-        
-        if "euclidean" in distances:
-            logging.info("Using Euclidean distances.")
-            return self._dist_euclidean
-
-        elif "manhattan" in distances:
-            logging.info("Using Manhattan distances.")
-            return self._dist_manhattan
-
-        else:
-            raise ValueError(f"Unsupported distances type: {distances}")
-    
-    
-    def _load_zones(self, rotate: bool=False) -> None:
+    def _load_zones(self) -> None:
 
         # Load the zones info from file
         stream = pkg_resources.resource_stream(__name__, 'data/taxizones.geojson')
@@ -158,18 +137,18 @@ class RidehailGeometry():
         # Set the ranges from the zones.
         self._xrange, self._yrange = self._compute_ranges(self.zones)
 
-        # Note the origin about which we will perform our rotations, if desired.
+        # Note the origin about which we will perform our rotations.
         # This is the center of the bounding box for our zones.
         self._rotation_origin = (
             self._xrange[0] + np.ptp(self._xrange)/2.0,
             self._yrange[0] + np.ptp(self._yrange)/2.0
         )
 
-        # Rotate the coordinates of the zone, if desired
-        if rotate:
-            self.zones['coordinates'] = self.zones['coordinates'].apply(rotate_points, args=(self._rotation_origin, self._MANHATTAN_ANGLE))
-            # Update the ranges based on the rotated zones.
-            self._xrange, self._yrange = self._compute_ranges(self.zones)
+        # Rotate the coordinates of the zone
+        self.zones['coordinates'] = self.zones['coordinates'].apply(rotate_points, args=(self._rotation_origin, self._MANHATTAN_ANGLE))
+        
+        # Update the ranges based on the rotated zones.
+        self._xrange, self._yrange = self._compute_ranges(self.zones)
         
         # Add triangulation to the zones
         self.zones = self._triangulate_zones(self.zones)
@@ -256,7 +235,7 @@ class RidehailGeometry():
         return df
     
     
-    def _load_lots(self, rotate: bool=False) -> None:
+    def _load_lots(self) -> None:
 
         stream = pkg_resources.resource_stream(__name__, 'data/lots.csv')
         self.lots = pd.read_csv(stream, index_col="id")
@@ -264,13 +243,12 @@ class RidehailGeometry():
         # Set the number of lots
         self.num_lots = len(self.lots)
 
-        # Rotate the lots if necessary
-        if rotate:
-            self.lots[['x', 'y']] = rotate_points(
-                self.lots[['x', 'y']].to_numpy(),
-                origin=self._rotation_origin,
-                degrees=self._MANHATTAN_ANGLE
-            )
+        # Rotate the lots
+        self.lots[['x', 'y']] = rotate_points(
+            self.lots[['x', 'y']].to_numpy(),
+            origin=self._rotation_origin,
+            degrees=self._MANHATTAN_ANGLE
+        )
 
         # Set the lots' locations as a complex array
         self.lot_locs = np.empty((1, self.num_lots), dtype=complex)
@@ -357,7 +335,7 @@ class RidehailGeometry():
 
 
     def dist(self, o: np.ndarray, d: np.ndarray, pairwise: bool=False) -> Union[np.ndarray, float]:
-        """Compute the distance between origin(s) `o` and destination(s) `d`.
+        """Compute the (manhattan) distance between origin(s) `o` and destination(s) `d`.
 
         If o and d are each a single pair of coordinates, then returns a scalar.
         
@@ -372,7 +350,7 @@ class RidehailGeometry():
 
         """
 
-        return self._distance_func(o, d, pairwise)
+        return self._dist_manhattan(o, d, pairwise)
 
         
     def _dist_euclidean(self, o: np.ndarray, d: np.ndarray, pairwise: bool) -> np.ndarray:

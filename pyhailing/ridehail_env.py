@@ -51,7 +51,6 @@ class RidehailEnv(gym.Env):
         num_vehicles: int=20,
         num_requests: int=1000,
         stochastic: bool=False,
-        distances: str="manhattan",
         seed: int=321,
         action_timelimit: float=np.inf,
         max_interdecision_time: Optional[float]=None,
@@ -65,9 +64,6 @@ class RidehailEnv(gym.Env):
             num_requests: The number of requests that should arise over a 24 hr period.
             
             stochastic: Whether vehicles' travel times should be subject to randomness
-
-            distances: How to measure distances between locations. Options are
-                "euclidean" and "manhattan"
 
             seed: A seed for the environment's uncertainties.
                 (NOTE: This applies to environment dynamics but does not yet apply
@@ -88,14 +84,13 @@ class RidehailEnv(gym.Env):
         self._num_vehicles = self._V = num_vehicles
         self._num_requests = self._R = num_requests
         self._stochastic = stochastic
-        self._distances = distances
         self._seed = seed
         self._action_timelimit = action_timelimit
         self._max_interdecision_time = max_interdecision_time if max_interdecision_time is not None else self._NEVER
 
         self._load_trips()
         
-        self._geom = RidehailGeometry(seed, distances, stochastic)
+        self._geom = RidehailGeometry(seed, stochastic)
         self._geom.add_init_weights_to_lots(self._trips_df, self._EPS_START_T_WINDOW)
 
 
