@@ -161,11 +161,11 @@ class RidehailGeometry():
 
         # Set the zones' locations as a complex array
         self.zone_locs = np.empty((1, self.num_zones), dtype=complex)
-        self.zone_locs.real = np.vstack(self.zones["centroids"].values)[:, 0]
-        self.zone_locs.imag = np.vstack(self.zones["centroids"].values)[:, 1]
+        self.zone_locs.real = np.vstack(self.zones["centroids"].to_numpy())[:, 0]
+        self.zone_locs.imag = np.vstack(self.zones["centroids"].to_numpy())[:, 1]
 
         # Get a mapping from real zone IDs to local zone IDs
-        self.zone_id_map = pd.Series(data=self.zones["zone_id"].index, index=self.zones["zone_id"].values)
+        self.zone_id_map = pd.Series(data=self.zones["zone_id"].index, index=self.zones["zone_id"].to_numpy())
 
         # And create a collection of polygons representing the zones. This is useful for rendering.
         self.zone_polys = PolyCollection(
@@ -252,8 +252,8 @@ class RidehailGeometry():
 
         # Set the lots' locations as a complex array
         self.lot_locs = np.empty((1, self.num_lots), dtype=complex)
-        self.lot_locs.real = self.lots["x"].values
-        self.lot_locs.imag = self.lots["y"].values
+        self.lot_locs.real = self.lots["x"].to_numpy()
+        self.lot_locs.imag = self.lots["y"].to_numpy()
 
 
     def _load_speeds(self) -> None:
@@ -263,9 +263,7 @@ class RidehailGeometry():
         self.speeds = pd.read_csv(stream)
         self._check_speeds()
 
-        self.speeds_orig = self.speeds.copy()
 
-    
     def _check_speeds(self) -> None:
         """Some simple checks on our speeds data."""
 
@@ -513,23 +511,56 @@ class RidehailGeometry():
         self,
         o: np.ndarray,
         d: np.ndarray,
-        hr: Union[int, np.ndarray]=9,
+        time: Union[int, np.ndarray]=32400,
         mean: bool=False,
         pairwise: bool=False
     ) -> np.ndarray:
         """Computes travel times between origin(s) o and destinations (d).
 
-        Assumes that travel is happening in hour hr (defaults to 9am).
+        Inputs:
+
+            o, d: Origins and destinations between which to compute travel time.
+
+            time: The time of day (in seconds elapsed from midnight) at which the
+                travel is assumed to occur. Defaults to 9am.
+
+            mean: Should the mean travel time be reported. Default (False) is to
+                generate *actual* travel times, which will differ from the mean
+                if the RidehailGeometry was created with stochastic=True.
+
+            pairwise: Whether to compute travel times between all (o,d) pairs. Only
+                possible if `time` is an int (all travel at the same time.
+
+        Assumes that travel is happening at time `time`.
 
         """
 
-        if pairwise and not isinstance(hr, (int, np.integer)):
-            raise ValueError("Pairwise travel times can only be computed for a single time.")
-        
-        if isinstance(hr, np.ndarray) and (hr.shape != (len(o),) or hr.shape != (len(d),)):
-            # Not doing pairwise. If hr is an array, then it should be the same length
-            # as o and d.
-            raise ValueError("hr, o, and d should have the same length.")
+        # Convert the time from elapsed seconds from midnight to elapsed minutes from midnight.
+        speeds_time = ((time // 60) // 15) * 15
+
+        # If we were passed an array...
+        if isinstance(speeds_time, np.ndarray):
+
+            # Make sure it has the proper type
+            speeds_time = speeds_time.astype(np.int32)
+
+            # If it doesn't need to be an array, change it
+            if all(speeds_time == speeds_time[0]):
+                speeds_time = speeds_time[0]
+            
+            # It's still an array; check a couple things.
+            else:
+                # Make sure pairwise wasn't requested
+                if pairwise:
+                    raise ValueError("Pairwise travel times can only be computed for a single time.")
+
+                # Make sure it shares the same length as o and d
+                if speeds_time.shape != (len(o),) or speeds_time.shape != (len(d),):
+                    raise ValueError("time, o, and d should have the same length.")
+
+        # We were passed a single value. Make sure it's an int
+        else:
+            speeds_time = int(speeds_time)
 
         # The distances between origins o and destinations d
         dists = self.dist(o, d, pairwise=pairwise)
@@ -561,10 +592,10 @@ class RidehailGeometry():
             dists = np.asarray(dists).reshape(-1)
 
         # Create a df for the required travel time computations.
-        df = pd.DataFrame(data={"puzone": zones_o, "dozone": zones_d, "hr": hr, "dist": dists})
+        df = pd.DataFrame(data={"puzone": zones_o, "dozone": zones_d, "min": speeds_time, "dist": dists})
         
         # Join on the speed data
-        df = df.merge(self.speeds, how="left", on=["puzone", "dozone", "hr"])
+        df = df.merge(self.speeds, how="left", on=["puzone", "dozone", "min"])
 
         # Get the realized speeds
         if mean:
@@ -585,4 +616,4 @@ class RidehailGeometry():
         df["travel_time"] = df["dist"] / df["speed_realized"]
 
         # Return the values, appropriately shaped
-        return df["travel_time"].values.reshape(dists_shape)
+        return df["travel_time"].to_numpy().reshape(dists_shape)

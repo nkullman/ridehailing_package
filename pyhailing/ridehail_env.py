@@ -35,9 +35,9 @@ class RidehailEnv(gym.Env):
     _HRS_PER_DAY = 24
     _S_PER_MIN = 60
     _S_PER_HR = 3600
-    _YR = 2018  # The year of the trip data.
+    _S_PER_DAY = _S_PER_HR * _HRS_PER_DAY
 
-    _MAX_TIME = 86400 # one day in seconds
+    _MAX_TIME = _S_PER_DAY
     _NEVER = _MAX_TIME + 1
     _MAX_WAIT = 300 # 5 min in seconds
     _TRAVEL_COST = 0.53 # $/km
@@ -238,12 +238,22 @@ class RidehailEnv(gym.Env):
 
     @property
     def trips_data(self):
+        """Returns the trips data used for request sampling.
+        
+        Produces a copy of the data every time this accessor is called.
+        
+        """
         return self._trips_df.copy()
 
 
     @property
     def speeds_data(self):
-        return self._geom.speeds_orig.copy()
+        """Returns the speeds data used to compute travel times.
+        
+        Produces a copy of the data every time this accessor is called.
+        
+        """
+        return self._geom.speeds.copy()
     
     
     def _pending_requests_mask(self) -> pd.Series:
@@ -410,12 +420,12 @@ class RidehailEnv(gym.Env):
         return self._FIXED_REWARD + self._VARIABLE_REWARD_DIST * dist
 
 
-    def _get_curr_hr(self) -> int:
-        """Returns the hour of the current time."""
+    def _get_curr_tod_s(self) -> int:
+        """Returns the current time of day in seconds since midnight."""
 
-        # Time is tracked in seconds starting from _EPS_START_HR. Convert that to hours elapsed, add to our
-        # start time, then roll it around if necessary.
-        return self._get_hr_from_time(self.time)
+        # Time is tracked in seconds starting from _EPS_START_HR.
+        # Convert that to seconds elapsed from midnight.
+        return self._get_tod_s_from_time(self.time)
     
     
     def _action_was_slow(self) -> bool:
@@ -431,9 +441,9 @@ class RidehailEnv(gym.Env):
         )
     
     
-    def _get_hr_from_time(self, time: Union[float, np.ndarray]) -> Union[int, np.ndarray]:
-        """Returns the hour of the day (as an integer) from the elapsed time."""
-        return np.round(((time // self._S_PER_HR) + self._EPS_START_HR) % self._HRS_PER_DAY).astype(int)
+    def _get_tod_s_from_time(self, time: Union[float, np.ndarray]) -> Union[int, np.ndarray]:
+        """Returns the time of the day as the number of elapsed seconds since midnight."""
+        return (np.round(time).astype(int) + (self._EPS_START_HR * 3600)) % self._S_PER_DAY
     
     
     def _make_null_jobs(self, mask: np.ndarray, jobs: Union[int, List[int]]) -> None:
@@ -510,7 +520,7 @@ class RidehailEnv(gym.Env):
         travel_times = self._geom.travel_time(
             o=vs[["avail_x", "avail_y"]].to_numpy(),
             d=reqs[["ox", "oy"]].to_numpy(),
-            hr=self._get_curr_hr(),
+            time=self._get_curr_tod_s(),
             mean=True,
             pairwise=False,
         )
@@ -554,7 +564,7 @@ class RidehailEnv(gym.Env):
         first_job_dt = first_job_ot + self._geom.travel_time(
             o=first_job_oloc,
             d=first_job_dloc,
-            hr=self._get_hr_from_time(first_job_ot),
+            time=self._get_tod_s_from_time(first_job_ot),
             mean=False,
             pairwise=False,
         )
@@ -698,7 +708,7 @@ class RidehailEnv(gym.Env):
         first_job_dt = first_job_ot + self._geom.travel_time(
             o=first_job_oloc,
             d=first_job_dloc,
-            hr=self._get_hr_from_time(first_job_ot),
+            time=self._get_tod_s_from_time(first_job_ot),
             mean=False,
             pairwise=False,
         )
@@ -1151,7 +1161,7 @@ class RidehailEnv(gym.Env):
             self._vehicles.loc[
                 self._vehicles[f"j{j_idx}m"] == Jobs.PROCESS,
                 [f"j{j_idx}ox", f"j{j_idx}oy", f"j{j_idx}dx", f"j{j_idx}dy"]
-            ].values
+            ].to_numpy()
             for j_idx in (1,2,3)
         ])
         
@@ -1385,7 +1395,7 @@ class RidehailEnv(gym.Env):
         """Sets the environment's requests for an episode."""
 
         # First, sample a day of the week in which the episode is to take place
-        dow = self._request_sampler.choice(self._dow_wts.index, p=self._dow_wts.values)
+        dow = self._request_sampler.choice(self._dow_wts.index, p=self._dow_wts.to_numpy())
         self._dow = dow
 
         # Then sample requests for that day of the week
@@ -1418,7 +1428,7 @@ class RidehailEnv(gym.Env):
         requests['pt'] = self._geom.travel_time(
             o=requests[['ox','oy']].to_numpy(),
             d=requests[['dx','dy']].to_numpy(),
-            hr=self._get_hr_from_time(requests["time"].to_numpy()),
+            time=self._get_tod_s_from_time(requests["time"].to_numpy()),
             pairwise=False,
         )
 
