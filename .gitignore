@@ -134,3 +134,6 @@ dmypy.json
 
 # Tests, for now
 tests
+
+# Eval files
+pyhailing_eval_results*.json
