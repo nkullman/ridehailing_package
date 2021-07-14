@@ -1,16 +1,76 @@
 from typing import List, Optional, Tuple, Union
+import json
 import logging
 import math
 import pkg_resources
 import time
 
 import gym
-from gym import spaces
-from PIL import Image, ImageDraw
 import numpy as np
 import pandas as pd
+from gym import spaces
+from PIL import Image, ImageDraw
 
 from pyhailing.core import RidehailGeometry, Jobs
+
+
+COMPETITION_SEED = 321
+COMPETITION_NUM_EVAL_EPISODES = 50
+
+
+class DimacsEnvConfigs():
+
+    SUI = {
+        "num_vehicles": 14,
+        "num_requests": 1400,
+        "stochastic": True,
+        "seed": COMPETITION_SEED,
+        "action_timelimit": np.inf,
+        "max_interdecision_time": 60,
+        "for_evaluation": True,
+    }
+
+    MUI = {
+        "num_vehicles": 100,
+        "num_requests": 10_000,
+        "stochastic": True,
+        "seed": COMPETITION_SEED,
+        "action_timelimit": np.inf,
+        "max_interdecision_time": 60,
+        "for_evaluation": True,
+    }
+
+    LUI = {
+        "num_vehicles": 500,
+        "num_requests": 50_000,
+        "stochastic": True,
+        "seed": COMPETITION_SEED,
+        "action_timelimit": np.inf,
+        "max_interdecision_time": 60,
+        "for_evaluation": True,
+    }
+
+    LTI = {
+        "num_vehicles": 500,
+        "num_requests": 50_000,
+        "stochastic": True,
+        "seed": COMPETITION_SEED,
+        "action_timelimit": 10,
+        "max_interdecision_time": 60,
+        "for_evaluation": True,
+    }
+
+
+class NpEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        else:
+            return super(NpEncoder, self).default(obj)
 
 
 class RidehailEnv(gym.Env):
@@ -29,6 +89,9 @@ class RidehailEnv(gym.Env):
 
     """
 
+    DIMACS_CONFIGS = DimacsEnvConfigs()
+    DIMACS_NUM_EVAL_EPISODES = COMPETITION_NUM_EVAL_EPISODES
+    
     _EPS_START_HR = 3
     _EPS_START_T_WINDOW = 8
     _NUM_T_WINDOW = 24 * 4
@@ -40,11 +103,14 @@ class RidehailEnv(gym.Env):
     _MAX_TIME = _S_PER_DAY
     _NEVER = _MAX_TIME + 1
     _MAX_WAIT = 300 # 5 min in seconds
-    _TRAVEL_COST = 0.53 # $/km
-    _FIXED_REWARD = 10.75 # $/km
-    _VARIABLE_REWARD_DIST = 4.02 # $/km
-
-    _TIME_STR_FORMAT_PRINT = '%H:%M:%S (%a %b %d)'
+    
+    TRAVEL_COST = 0.53 # $/km
+    FIXED_REWARD = 10.75 # $/km
+    VARIABLE_REWARD_DIST = 4.02 # $/km
+    REWARDS = {
+        "fixed": FIXED_REWARD,
+        "variable_dist": VARIABLE_REWARD_DIST
+    }
 
 
     def __init__(self,
@@ -54,6 +120,7 @@ class RidehailEnv(gym.Env):
         seed: int=321,
         action_timelimit: float=np.inf,
         max_interdecision_time: Optional[float]=None,
+        for_evaluation: bool=False
     ):
         """Instantiates a ridehailing environment.
         
@@ -76,9 +143,13 @@ class RidehailEnv(gym.Env):
             max_interdecision_time: The maximum amount of (simulated) time to allow
                 between decision epochs (in seconds). The default behavior is to
                 only trigger decision epochs upon the arrival or completion of a request.
+
+            for_evaluation: Whether to run the environment in evaluation mode.
                 
         """
 
+        init_time = time.strftime("%Y%m%d%H%M%S")
+        
         logging.info("Ridehail environment being initialized...")
 
         self._num_vehicles = self._V = num_vehicles
@@ -87,6 +158,28 @@ class RidehailEnv(gym.Env):
         self._seed = seed
         self._action_timelimit = action_timelimit
         self._max_interdecision_time = max_interdecision_time if max_interdecision_time is not None else self._NEVER
+        self._eval = for_evaluation
+
+        self.config = {
+            "num_vehicles": num_vehicles,
+            "num_requests": num_requests,
+            "stochastic": stochastic,
+            "seed": seed,
+            "action_timelimit": action_timelimit,
+            "max_interdecision_time": max_interdecision_time,
+            "eval": for_evaluation,
+        }
+
+        if for_evaluation and self._seed != COMPETITION_SEED:
+            logging.warning("You are not using the official evaluation seed.")
+
+        # Warn the user if they are using the early pre-competition seed.
+        if for_evaluation and COMPETITION_SEED == 321:
+            logging.warning(
+                "**You are using the pre-release DIMACS evaluation seed.** "
+                "If you are generating a file for submission to the competition, pleases check the "
+                "competition website to get the official seed.\n"
+            )
 
         self._load_trips()
         
@@ -112,6 +205,14 @@ class RidehailEnv(gym.Env):
 
         # Perform whatever initial seeding needs to be done.
         self._initial_seeding()
+
+        # If evaluating, initialize the output file
+        if self._eval:
+            self._eval_out_fname = f"./pyhailing_eval_results_{init_time}.json"
+            self._eval_dict = {
+                "config": self.config,
+                "episodes": []
+            }
 
 
     def _initial_seeding(self) -> None:
@@ -417,7 +518,7 @@ class RidehailEnv(gym.Env):
         """ Returns the value of a request based on its origin and destination."""
 
         dist = self._geom.dist(origin, destination, pairwise=False)
-        return self._FIXED_REWARD + self._VARIABLE_REWARD_DIST * dist
+        return self.FIXED_REWARD + self.VARIABLE_REWARD_DIST * dist
 
 
     def _get_curr_tod_s(self) -> int:
@@ -884,6 +985,12 @@ class RidehailEnv(gym.Env):
         # The indices of the vehicles that are serving the assigned requests
         serving_idxs = req_assgts[assgd_reqs_mask]
 
+        # Write assignments to our dict (to be written to file)
+        if self._eval and len(serving_idxs) > 0:
+            self.episode_dict["assignments"].extend(
+                [(r,v) for r,v in zip(assgd_reqs_idxs, serving_idxs)]
+            )
+
         ## Phase I.I.a) Updating the vehicles' df for the service of the new requests.
 
         self._update_servers_job_cols(assgd_reqs_idxs, serving_idxs)
@@ -961,7 +1068,7 @@ class RidehailEnv(gym.Env):
         assert np.all(np.isfinite(job_pct_completed)), "Values should all be finite at this point."
         job_dists = self._get_jobs_dists()
         dists_traveled = job_pct_completed * job_dists
-        reward -= np.sum(dists_traveled) * self._TRAVEL_COST
+        reward -= np.sum(dists_traveled) * self.TRAVEL_COST
 
         # How many jobs will be completed by the time of the next epoch?
         num_to_remove = (next_epoch_time >= job_dtimes).sum(axis=1)
@@ -1041,6 +1148,9 @@ class RidehailEnv(gym.Env):
         # Update the total accumulated rewards
         self.rewards += reward
 
+        # Update the step count
+        self.curr_step += 1
+
         # Set the number of assignable requests and update the action and observation spaces
         self.num_pending_requests = self._get_num_pending_requests()
         self._set_action_space()
@@ -1049,12 +1159,26 @@ class RidehailEnv(gym.Env):
         # Create the observation to send to the agent
         obs = self._make_state()
 
+        # Note whether the state is terminal
+        terminal = self.time >= self._MAX_TIME
+
+        # If so, and if we are producing an output file, write it now
+        if self._eval and terminal:
+            self.episode_dict["final_reward"] = self.rewards
+            self._eval_dict["episodes"].append(self.episode_dict)
+            self._write_eval_dict()
+
         # Note the time at which this observation is being released to the user.
         self._obs_release_time = time.time()
 
-        return obs, reward, self.time >= self._MAX_TIME, {}
+        return obs, reward, terminal, {}
 
 
+    def _write_eval_dict(self):
+        with open(self._eval_out_fname, "w") as f:
+            json.dump(self._eval_dict, f, cls=NpEncoder)
+    
+    
     def reset(self):
         """ Sets the environment to an initial state and returns that state."""
 
@@ -1091,6 +1215,13 @@ class RidehailEnv(gym.Env):
 
         # We don't do a time check on the first action (may be more external computation required after the reset)
         self._obs_release_time = None
+
+        if self._eval:
+            self.episode_dict = {
+                "episode": self.curr_episode,
+                "assignments": [],
+                "final_reward": np.inf,
+            }
 
         return obs
 
@@ -1275,9 +1406,6 @@ class RidehailEnv(gym.Env):
     
     
     def render(self, mode='human', close=False):
-
-        # NOTE if this doesn't look right, could just save the coords-to-draw in prep_rendering
-        # and create the image from scratch here.
 
         # Load the base render with zones and lots
         img = Image.fromarray(self._base_render)
