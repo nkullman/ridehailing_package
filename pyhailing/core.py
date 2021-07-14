@@ -261,6 +261,7 @@ class RidehailGeometry():
         # Load the speeds data from file
         stream = pkg_resources.resource_stream(__name__, 'data/speeds.csv')
         self.speeds = pd.read_csv(stream)
+        self.speeds = self.speeds.set_index(["puzone", "dozone", "min"])
         self._check_speeds()
 
 
@@ -592,11 +593,14 @@ class RidehailGeometry():
             dists = np.asarray(dists).reshape(-1)
 
         # Create a df for the required travel time computations.
-        df = pd.DataFrame(data={"puzone": zones_o, "dozone": zones_d, "min": speeds_time, "dist": dists})
+        df = (
+            pd.DataFrame(data={"puzone": zones_o, "dozone": zones_d, "min": speeds_time, "dist": dists})
+            .set_index(["puzone", "dozone", "min"])
+        )
         
         # Join on the speed data
-        df = df.merge(self.speeds, how="left", on=["puzone", "dozone", "min"])
-
+        df = pd.concat([df, self.speeds.loc[df.index, ["speed_mean", "speed_stddev"]]], axis=1)
+        
         # Get the realized speeds
         if mean:
             # The realized speed is just the mean speed
