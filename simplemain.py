@@ -1,40 +1,45 @@
+import matplotlib.pyplot as plt
+
 from pyhailing import RidehailEnv
 
-def get_action(env, obs, noop: bool=False):
-    if noop:
-        return env.get_noop_action()
-    else:
-        return env.get_random_action()
 
-def main():
-    import matplotlib.pyplot as plt
+def main(render:bool=False):
 
-    env = RidehailEnv(num_requests=100)
-    obs = env.reset()
+    all_eps_rewards = []
+    
+    env = RidehailEnv(**RidehailEnv.DIMACS_CONFIGS.SUI)
 
-    rgb = env.render()
-    plt.imshow(rgb)
-    plt.show()
+    for episode in range(RidehailEnv.DIMACS_NUM_EVAL_EPISODES):
 
-    terminal = False
-    reward = 0
+        obs = env.reset()
+        terminal = False
+        reward = 0
 
-    while not terminal:
+        if render:
+            rgb = env.render()
+            plt.imshow(rgb)
+            plt.show()
 
-        action = get_action(env, obs)
+        while not terminal:
 
-        next_obs, new_rwd, terminal, _ = env.step(action)
+            action = env.get_noop_action()
+            # action = env.get_random_action()
 
-        reward += new_rwd
-        obs = next_obs
+            next_obs, new_rwd, terminal, _ = env.step(action)
 
-        rgb = env.render()
-        plt.imshow(rgb)
-        plt.show()
+            reward += new_rwd
+            obs = next_obs
 
-    print(reward)
-    print(obs)
+            if render:
+                rgb = env.render()
+                plt.imshow(rgb)
+                plt.show()
 
+        print(f"Episode {episode} complete. Reward: {reward}")
+        all_eps_rewards.append(reward)
+
+    mean_reward = sum(all_eps_rewards)/len(all_eps_rewards)
+    print(f"All episodes complete. Average reward: {mean_reward}")
 
 
 if __name__ == "__main__":
