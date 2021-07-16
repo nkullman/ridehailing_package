@@ -137,3 +137,4 @@ tests
 
 # Eval files
 pyhailing_eval_results*.json
+competition_results_*.csv
