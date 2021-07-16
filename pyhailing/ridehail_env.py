@@ -28,6 +28,7 @@ class DimacsEnvConfigs():
         "action_timelimit": np.inf,
         "max_interdecision_time": 60,
         "for_evaluation": True,
+        "nickname": None,
     }
 
     MUI = {
@@ -38,6 +39,7 @@ class DimacsEnvConfigs():
         "action_timelimit": np.inf,
         "max_interdecision_time": 60,
         "for_evaluation": True,
+        "nickname": None,
     }
 
     LUI = {
@@ -48,6 +50,7 @@ class DimacsEnvConfigs():
         "action_timelimit": np.inf,
         "max_interdecision_time": 60,
         "for_evaluation": True,
+        "nickname": None,
     }
 
     LTI = {
@@ -58,6 +61,14 @@ class DimacsEnvConfigs():
         "action_timelimit": 10,
         "max_interdecision_time": 60,
         "for_evaluation": True,
+        "nickname": None,
+    }
+
+    ALL_CONFIGS = {
+        "SUI": SUI,
+        "MUI": MUI,
+        "LUI": LUI,
+        "LTI": LTI,
     }
 
 
@@ -120,7 +131,8 @@ class RidehailEnv(gym.Env):
         seed: int=321,
         action_timelimit: float=np.inf,
         max_interdecision_time: Optional[float]=None,
-        for_evaluation: bool=False
+        for_evaluation: bool=False,
+        nickname:Optional[str]=None,
     ):
         """Instantiates a ridehailing environment.
         
@@ -145,6 +157,10 @@ class RidehailEnv(gym.Env):
                 only trigger decision epochs upon the arrival or completion of a request.
 
             for_evaluation: Whether to run the environment in evaluation mode.
+
+            nickname: Nickname for the entity performing the runs (e.g., the policy,
+                agent, user/participant, or team). Only used in evaluation to identify the entity.
+                If provided, should be a single word (no spaces).
                 
         """
 
@@ -168,18 +184,10 @@ class RidehailEnv(gym.Env):
             "action_timelimit": action_timelimit,
             "max_interdecision_time": max_interdecision_time,
             "eval": for_evaluation,
+            "nickname": nickname
         }
 
-        if for_evaluation and self._seed != COMPETITION_SEED:
-            logging.warning("You are not using the official evaluation seed.")
-
-        # Warn the user if they are using the early pre-competition seed.
-        if for_evaluation and COMPETITION_SEED == 321:
-            logging.warning(
-                "**You are using the pre-release DIMACS evaluation seed.** "
-                "If you are generating a file for submission to the competition, pleases check the "
-                "competition website to get the official seed.\n"
-            )
+        self._check_eval_config(self.config)
 
         self._load_trips()
         
@@ -208,13 +216,40 @@ class RidehailEnv(gym.Env):
 
         # If evaluating, initialize the output file
         if self._eval:
-            self._eval_out_fname = f"./pyhailing_eval_results_{init_time}.json"
+            self._eval_out_fname = f"./pyhailing_eval_results_{nickname}_{init_time}.json"
             self._eval_dict = {
                 "config": self.config,
                 "episodes": []
             }
 
 
+    def _check_eval_config(self, config) -> None:
+
+        if config["eval"] and config["nickname"] is None:
+            raise ValueError(
+                "A nickname must be provided when evaluating. "
+                "Please add a nickname to the configuration. For example:\n"
+                "\tenv_config = RidehailEnv.DIMACS_CONFIGS.SUI\n"
+                "\tenv_config['nickname'] = 'mynickname'\n"
+                "\tenv = RidehailEnv(**env_config)\n"
+            )
+
+        if config["eval"] and len(config["nickname"].split()) != 1:
+            raise ValueError("Nickname should be a single word.")
+            
+        
+        if config["eval"] and self._seed != COMPETITION_SEED:
+            logging.warning("You are not using the official evaluation seed.")
+
+        # Warn the user if they are using the early pre-competition seed.
+        if config["eval"] and COMPETITION_SEED == 321:
+            logging.warning(
+                "**You are using the pre-release DIMACS evaluation seed.** "
+                "If you are trying to generate a file for submission to the competition, pleases check the "
+                "competition website to get the latest official seed.\n"
+            )
+    
+    
     def _initial_seeding(self) -> None:
 
         # We're going to have 2 distinct generators:

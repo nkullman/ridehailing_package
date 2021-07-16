@@ -5,10 +5,12 @@ from pyhailing import RidehailEnv
 
 def main(render:bool=False):
 
-    all_eps_rewards = []
+    env_config = RidehailEnv.DIMACS_CONFIGS.SUI
+    env_config["nickname"] = "testing"
     
-    env = RidehailEnv(**RidehailEnv.DIMACS_CONFIGS.SUI)
+    env = RidehailEnv(**env_config)
 
+    all_eps_rewards = []
     for episode in range(RidehailEnv.DIMACS_NUM_EVAL_EPISODES):
 
         obs = env.reset()
