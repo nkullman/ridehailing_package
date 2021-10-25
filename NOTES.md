@@ -2,6 +2,7 @@
 
 ## Shorter-term, higher priority
 
+- Update setup.py to require `Pillow>=8.0.0` and `matplotlib`
 - Improve documentation
 
 ## Longer term, lower priority
