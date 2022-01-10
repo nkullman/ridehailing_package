@@ -2,7 +2,7 @@ import setuptools
 
 setuptools.setup(
     name="pyhailing",
-    version="0.0.8",
+    version="0.0.9",
     url="https://github.com/nkullman/ridehailing_package",
     author="Nicholas Kullman",
     author_email="nick.kullman@gmail.com",
@@ -12,7 +12,8 @@ setuptools.setup(
     packages=setuptools.find_packages(),
     install_requires=[
         "gym",
-        "numpy",
+        "matplotlib",
+        "numpy>=1.19,<1.22",
         "pandas",
         "Pillow",
         "scipy",

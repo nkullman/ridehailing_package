@@ -14,7 +14,7 @@ from PIL import Image, ImageDraw
 from pyhailing.core import RidehailGeometry, Jobs
 
 
-COMPETITION_SEED = 321
+COMPETITION_SEED = 20151101
 COMPETITION_NUM_EVAL_EPISODES = 50
 
 
@@ -123,6 +123,8 @@ class RidehailEnv(gym.Env):
         "variable_dist": VARIABLE_REWARD_DIST
     }
 
+    NUMPY_VERSION = np.__version__
+
 
     def __init__(self,
         num_vehicles: int=20,
@@ -184,7 +186,8 @@ class RidehailEnv(gym.Env):
             "action_timelimit": action_timelimit,
             "max_interdecision_time": max_interdecision_time,
             "eval": for_evaluation,
-            "nickname": nickname
+            "nickname": nickname,
+            "np_version": self.NUMPY_VERSION,
         }
 
         self._check_eval_config(self.config)
@@ -246,7 +249,7 @@ class RidehailEnv(gym.Env):
             logging.warning(
                 "**You are using the pre-release DIMACS evaluation seed.** "
                 "If you are trying to generate a file for submission to the competition, pleases check the "
-                "competition website to get the latest official seed.\n"
+                "competition website to get the latest official seed, or email the organizers.\n"
             )
     
     
@@ -1306,7 +1309,7 @@ class RidehailEnv(gym.Env):
             "v_job_locs": (
                 self._vehicles[[
                     "j1ox", "j1oy", "j1dx", "j1dy",
-                    "j2ox", "j2oy", "j2dx", "j3dy",
+                    "j2ox", "j2oy", "j2dx", "j2dy",
                     "j3ox", "j3oy", "j3dx", "j3dy"
                 ]].to_numpy().reshape(self._V, 3, 2, 2).astype(np.float64)
             ),
