@@ -1,4 +1,5 @@
 import setuptools
+import matplotlib
 
 setuptools.setup(
     name="pyhailing",
